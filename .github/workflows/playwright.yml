@@ -1,4 +1,3 @@
-
 name: Playwright Tests
 
 on:
@@ -37,22 +36,35 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Enable ARM64 emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - name: Download Docker Compose configuration
         run: |
           curl -fsSL https://raw.githubusercontent.com/testsmith-io/practice-software-testing/9e7736c/docker-compose.prod.yml -o docker-compose.prod.yml
           printf "SPRINT=sprint5\nDISABLE_LOGGING=true\n" > .env
 
+          cat > docker-compose.ci.yml <<'EOF'
+          services:
+            web:
+              platform: linux/arm64
+            cron:
+              platform: linux/arm64
+          EOF
+
       - name: Start application
         run: |
-          docker compose -f docker-compose.prod.yml up --pull missing -d
-          docker compose -f docker-compose.prod.yml ps
+          docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml up --pull missing -d
+          docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml ps
 
       - name: Wait for database
         run: |
           READY=false
 
           for i in {1..24}; do
-            if docker compose -f docker-compose.prod.yml exec -T mariadb mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+            if docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml exec -T mariadb mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
               READY=true
               break
             fi
@@ -63,7 +75,7 @@ jobs:
 
           if [ "$READY" != "true" ]; then
             echo "MariaDB did not become ready."
-            docker compose -f docker-compose.prod.yml logs mariadb
+            docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml logs mariadb
             exit 1
           fi
 
@@ -72,7 +84,7 @@ jobs:
           SEEDED=false
 
           for i in {1..12}; do
-            if docker compose -f docker-compose.prod.yml exec -T laravel-api php artisan migrate:fresh --seed; then
+            if docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml exec -T laravel-api php artisan migrate:fresh --seed; then
               SEEDED=true
               break
             fi
@@ -83,7 +95,7 @@ jobs:
 
           if [ "$SEEDED" != "true" ]; then
             echo "Database seeding failed."
-            docker compose -f docker-compose.prod.yml logs laravel-api
+            docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml logs laravel-api
             exit 1
           fi
 
@@ -116,7 +128,7 @@ jobs:
 
           if [ "$API_READY" != "true" ] || [ "$UI_READY" != "true" ]; then
             echo "Application did not become ready."
-            docker compose -f docker-compose.prod.yml logs --tail=100
+            docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml logs --tail=100
             exit 1
           fi
 
@@ -143,13 +155,13 @@ jobs:
 
       - name: Show application logs on failure
         if: failure()
-        run: docker compose -f docker-compose.prod.yml logs --tail=150
+        run: docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml logs --tail=150
 
       - name: Stop application
         if: always()
         run: |
           if [ -f docker-compose.prod.yml ]; then
-            docker compose -f docker-compose.prod.yml down --volumes --remove-orphans
+            docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml down --volumes --remove-orphans
           fi
 
   merge-reports:
