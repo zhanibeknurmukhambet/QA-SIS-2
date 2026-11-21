@@ -29,3 +29,34 @@ The project contains five automated UI tests implemented with JavaScript and Pla
 ## Conclusion
 
 The tests cover registration, login, cart functionality, product information, and password reset. They provide basic automated UI coverage, but additional assertions would be required for more comprehensive end-to-end validation.
+## SIS 3 — CI/CD Review
+
+### CI Pipeline
+
+- Added a GitHub Actions workflow triggered by pushes and pull requests targeting the main branch.
+- Configured Node.js 22 and npm dependency caching.
+- Added dependency installation using npm ci and Chromium installation.
+- Configured CI-specific Playwright settings, including forbidOnly, two retries, JUnit reporting, and failure diagnostics.
+
+### Parallel Execution
+
+- Implemented Playwright sharding across four independent GitHub Actions jobs.
+- Each shard runs with up to two Playwright workers.
+- Verified all five tests locally across four shards: 2 + 1 + 1 + 1 tests passed.
+- Successfully generated and merged a local Blob Report into an HTML report.
+
+### Artifacts and Reporting
+
+- Configured uploads of test results and Blob Reports.
+- Configured a merged HTML report.
+- Set artifact retention to 14 days.
+
+### Limitations and Pending Verification
+
+- The GitHub Actions workflow still requires its first execution on GitHub for end-to-end CI verification.
+- The actual CI runtime must be recorded after the first workflow execution.
+- Branch protection rules must be configured in GitHub repository settings to make successful test checks mandatory before merging pull requests.
+
+### Conclusion
+
+The project has been extended with a parallelized CI pipeline and automated reporting. Local sharding and report merging have been tested successfully. Final verification of the GitHub Actions workflow and merge protection remains pending.
