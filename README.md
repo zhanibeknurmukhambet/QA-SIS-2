@@ -9,11 +9,15 @@ This project contains automated end-to-end tests for [Practice Software Testing]
 
 The project was initially developed as part of SIS 2 and extended with Continuous Integration (CI) capabilities for SIS 3 using GitHub Actions.
 
+The CI pipeline runs the application in Docker containers and executes automated tests in parallel using Playwright sharding.
+
 ## Technology Stack
 
 - JavaScript (Node.js)
 - Playwright Test
 - GitHub Actions
+- Docker and Docker Compose
+- QEMU (ARM64 emulation)
 - Git and GitHub
 - Chromium
 
@@ -33,34 +37,24 @@ The project includes five automated test cases:
 
 Clone the repository:
 
-```bash
-git clone https://github.com/zhanibeknurmukhambet/QA-SIS-2.git
-cd QA-SIS-2
-```
+    git clone https://github.com/zhanibeknurmukhambet/QA-SIS-2.git
+    cd QA-SIS-2
 
 Install dependencies:
 
-```bash
-npm ci
-```
+    npm ci
 
 Install Chromium:
 
-```bash
-npx playwright install chromium
-```
+    npx playwright install chromium
 
 Run all tests:
 
-```bash
-npm test
-```
+    npm test
 
 Run tests using sharding:
 
-```bash
-npx playwright test --shard=1/4
-```
+    npx playwright test --shard=1/4
 
 ## Continuous Integration
 
@@ -83,10 +77,31 @@ The pipeline runs automatically on:
 2. Set up Node.js 22.
 3. Install dependencies using `npm ci` with npm caching.
 4. Install Chromium and required system dependencies.
-5. Execute Playwright tests using four parallel shards.
-6. Upload test results, traces, and Blob Reports.
-7. Merge Blob Reports into a single HTML report.
-8. Upload the final HTML report.
+5. Configure QEMU for ARM64 container compatibility.
+6. Download the Docker Compose configuration and start the application.
+7. Wait for the database and initialize it with test data.
+8. Execute Playwright tests using four parallel shards.
+9. Upload test results, traces, and Blob Reports.
+10. Merge Blob Reports into a single HTML report.
+11. Upload the final HTML report.
+12. Stop Docker containers and remove temporary volumes.
+
+### Application Environment
+
+The CI pipeline runs the Practice Software Testing application in Docker containers instead of relying on the publicly hosted website.
+
+The application consists of:
+
+- Angular frontend.
+- Laravel API.
+- MariaDB database.
+- Supporting web and cron services.
+
+The frontend is available to Playwright at `http://127.0.0.1:4200`.
+
+QEMU provides ARM64 emulation for Docker images that are not compatible with the default GitHub Actions runner architecture.
+
+This approach makes the test environment independent of external website availability and bot protection mechanisms.
 
 ### Parallel Execution
 
@@ -118,23 +133,33 @@ The workflow uploads the following artifacts:
 
 Artifacts are retained for 14 days.
 
-### Runtime Comparison
+### Runtime and CI Results
 
-| Execution | Runtime |
+The first successful GitHub Actions execution produced the following results:
+
+| Metric | Result |
 |---|---:|
-| Initial local execution without sharding | 17.37 seconds |
-| Parallel execution in GitHub Actions | To be measured |
+| Initial local test execution without sharding | 17.37 seconds |
+| Complete GitHub Actions pipeline | 1 minute 53 seconds |
+| Parallel shards | 4 |
+| Successful shards | 4/4 |
+| Report merging | Successful |
+| Uploaded artifacts | 9 |
+| Artifact retention | 14 days |
 
-The final CI runtime will be recorded after the first successful GitHub Actions execution.
+The local execution time represents the test suite runtime, while the CI runtime includes application startup, database initialization, test execution, and report generation. Therefore, these values are not directly comparable.
+
+**Successful CI run:** [GitHub Actions](https://github.com/zhanibeknurmukhambet/QA-SIS-2/actions/runs/44944275860)
 
 ### Merge and Quality Gates
 
-The Playwright test jobs are intended to act as quality gates.
+The Playwright test jobs act as CI quality checks.
 
-- Failed automated tests should block merging when the corresponding GitHub Actions checks are configured as required branch protection checks.
-- Passing tests allow the test checks to succeed.
+- Failed automated tests cause the corresponding GitHub Actions checks to fail.
+- Passing tests allow the test jobs to succeed.
 - HTML reports, traces, screenshots, and videos provide diagnostic information and do not independently determine whether a pull request can be merged.
 - The report-merging job runs independently of test success so diagnostic reports can still be published after test failures.
+- To enforce merge protection, the relevant GitHub Actions test checks must be configured as required branch protection checks.
 
 ## AI Assistance
 
