@@ -17,6 +17,10 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
 
+    env:
+      CI: true
+      BASE_URL: http://127.0.0.1:4200
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,6 +37,89 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Download Docker Compose configuration
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/testsmith-io/practice-software-testing/9e7736c/docker-compose.prod.yml -o docker-compose.prod.yml
+          printf "SPRINT=sprint5\nDISABLE_LOGGING=true\n" > .env
+
+      - name: Start application
+        run: |
+          docker compose -f docker-compose.prod.yml up --pull missing -d
+          docker compose -f docker-compose.prod.yml ps
+
+      - name: Wait for database
+        run: |
+          READY=false
+
+          for i in {1..24}; do
+            if docker compose -f docker-compose.prod.yml exec -T mariadb mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+              READY=true
+              break
+            fi
+
+            echo "Waiting for MariaDB... ($i/24)"
+            sleep 5
+          done
+
+          if [ "$READY" != "true" ]; then
+            echo "MariaDB did not become ready."
+            docker compose -f docker-compose.prod.yml logs mariadb
+            exit 1
+          fi
+
+      - name: Seed database
+        run: |
+          SEEDED=false
+
+          for i in {1..12}; do
+            if docker compose -f docker-compose.prod.yml exec -T laravel-api php artisan migrate:fresh --seed; then
+              SEEDED=true
+              break
+            fi
+
+            echo "Database initialization failed. Retrying in 5 seconds... ($i/12)"
+            sleep 5
+          done
+
+          if [ "$SEEDED" != "true" ]; then
+            echo "Database seeding failed."
+            docker compose -f docker-compose.prod.yml logs laravel-api
+            exit 1
+          fi
+
+      - name: Wait for application
+        run: |
+          API_READY=false
+          UI_READY=false
+
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8091/api/documentation -o /dev/null; then
+              API_READY=true
+              echo "API is ready."
+              break
+            fi
+
+            echo "Waiting for API... ($i/60)"
+            sleep 5
+          done
+
+          for i in {1..60}; do
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4200)" = "200" ]; then
+              UI_READY=true
+              echo "Frontend is ready."
+              break
+            fi
+
+            echo "Waiting for frontend... ($i/60)"
+            sleep 5
+          done
+
+          if [ "$API_READY" != "true" ] || [ "$UI_READY" != "true" ]; then
+            echo "Application did not become ready."
+            docker compose -f docker-compose.prod.yml logs --tail=100
+            exit 1
+          fi
+
       - name: Run Playwright tests
         run: npx playwright test --shard=${{ matrix.shard }}/4
 
@@ -43,6 +130,7 @@ jobs:
           name: test-results-${{ matrix.shard }}
           path: test-results/
           retention-days: 14
+          if-no-files-found: warn
 
       - name: Upload blob report
         if: always()
@@ -51,6 +139,18 @@ jobs:
           name: blob-report-${{ matrix.shard }}
           path: blob-report/
           retention-days: 14
+          if-no-files-found: warn
+
+      - name: Show application logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.prod.yml logs --tail=150
+
+      - name: Stop application
+        if: always()
+        run: |
+          if [ -f docker-compose.prod.yml ]; then
+            docker compose -f docker-compose.prod.yml down --volumes --remove-orphans
+          fi
 
   merge-reports:
     name: Merge Playwright Reports
@@ -79,7 +179,12 @@ jobs:
           merge-multiple: true
 
       - name: Merge reports
-        run: npx playwright merge-reports --reporter html ./all-blob-reports
+        run: |
+          if find all-blob-reports -name '*.zip' -print -quit | grep -q .; then
+            npx playwright merge-reports --reporter html ./all-blob-reports
+          else
+            echo "No blob reports were generated."
+          fi
 
       - name: Upload HTML report
         if: always()
@@ -88,3 +193,4 @@ jobs:
           name: playwright-html-report
           path: playwright-report/
           retention-days: 14
+          if-no-files-found: warn

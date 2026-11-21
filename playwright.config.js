@@ -20,7 +20,7 @@ module.exports = defineConfig({
     : 'list',
 
   use: {
-    baseURL: 'https://practicesoftwaretesting.com',
+    baseURL: process.env.BASE_URL || 'https://practicesoftwaretesting.com',
     browserName: 'chromium',
     headless: true,
     testIdAttribute: 'data-test',
